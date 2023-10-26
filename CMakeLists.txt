@@ -1,8 +1,8 @@
 # -- Can be removed if not on OpenStack --
-find_program(GCC_PATH gcc)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
-add_compile_options("-Wno-error" "-Wno-pedantic" "-Wno-old-style-cast")
-set(CMAKE_CUDA_HOST_COMPILER ${GCC_PATH})
+#find_program(GCC_PATH gcc)
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
+#add_compile_options("-Wno-error" "-Wno-pedantic" "-Wno-old-style-cast")
+#set(CMAKE_CUDA_HOST_COMPILER ${GCC_PATH})
 # -- /Can be removed if not on OpenStack --
 project(IRGPUA)
 cmake_minimum_required(VERSION 3.18)

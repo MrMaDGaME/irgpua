@@ -6,3 +6,4 @@
 *.fatbin
 .idea/
 cmake-build-debug/
+build/
