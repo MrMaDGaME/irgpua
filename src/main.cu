@@ -1,6 +1,8 @@
 #include "image.hh"
 #include "pipeline.hh"
 #include "fix_cpu.cuh"
+#include <cuda_runtime.h>
+
 
 //this is new
 #include "fix_gpu.cuh" 
@@ -12,6 +14,9 @@
 #include <sstream>
 #include <filesystem>
 #include <numeric>
+
+// Déclaration de la fonction qui sera définie plus tard.
+__global__ void fix_image_gpu(int* buffer, int width, int height);
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
@@ -39,6 +44,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     std::cout << "Done, starting compute" << std::endl;
 
+    // this is new
+    int* d_imageBuffer;
+    size_t bufferSize; // cela sera utilisé pour connaître la taille de l'image en termes de mémoire
+    //
+
     #pragma omp parallel for
     for (int i = 0; i < nb_images; ++i)
     {
@@ -49,10 +59,26 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         // You *must not* copy all the images and only then do the computations
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
-        images[i] = pipeline.get_image(i);
         
-        //fix_image_cpu(images[i]);
-        fix_image_gpu(images[i]);
+        Image& currentImage = pipeline.get_image(i); 
+        bufferSize = currentImage.width * currentImage.height * sizeof(int); 
+
+        // Allocation de mémoire sur le GPU et copie de l'image sur le GPU
+        cudaMalloc(&d_imageBuffer, bufferSize);
+        cudaMemcpy(d_imageBuffer, currentImage.buffer, bufferSize, cudaMemcpyHostToDevice);
+
+        // Lancement du traitement sur le GPU
+        int numThreads = 256;
+        int numBlocks = (currentImage.width * currentImage.height + numThreads - 1) / numThreads;
+        fix_image_gpu<<<numBlocks, numThreads>>>(d_imageBuffer, currentImage.width, currentImage.height);
+        
+        // Copie de l'image traitée du GPU vers le CPU
+        cudaMemcpy(currentImage.buffer, d_imageBuffer, bufferSize, cudaMemcpyDeviceToHost);
+
+        // Libération de l'espace mémoire sur le GPU
+        cudaFree(d_imageBuffer);
+
+        images[i] = currentImage;
 
     }
 
