@@ -2,6 +2,10 @@
 #include "pipeline.hh"
 #include "fix_cpu.cuh"
 
+//this is new
+#include "fix_gpu.cuh" 
+
+
 #include <vector>
 #include <iostream>
 #include <algorithm>
@@ -46,7 +50,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-        fix_image_cpu(images[i]);
+        
+        //fix_image_cpu(images[i]);
+        fix_image_gpu(images[i]);
+
     }
 
     std::cout << "Done with compute, starting stats" << std::endl;
