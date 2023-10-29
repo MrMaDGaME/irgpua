@@ -8,12 +8,68 @@
 #include <filesystem>
 #include <numeric>
 
-__global__ void fix_image_gpu(int *buffer, int width, int height, int *predicate) {
+__device__ void exclusive_scan_kernel(int* predicate, int* scan_result, int size) {
+    // Un simple scan exclusif, pour une efficacité accrue, considérez un scan hiérarchique ou l'utilisation de bibliothèques existantes.
+    if (threadIdx.x > 0 && threadIdx.x < size) {
+        scan_result[threadIdx.x] = predicate[threadIdx.x - 1] + scan_result[threadIdx.x - 1];
+    } else {
+        scan_result[0] = 0;
+    }
+}
+
+__device__ void inclusive_scan_kernel(int* predicate, int* scan_result, int size) {
+    // Un simple scan inclusif, pour une efficacité accrue, considérez un scan hiérarchique ou l'utilisation de bibliothèques existantes.
+    if (threadIdx.x > 0 && threadIdx.x < size) {
+        scan_result[threadIdx.x] = predicate[threadIdx.x] + scan_result[threadIdx.x - 1];
+    } else {
+        scan_result[0] = predicate[0];
+    }
+}
+
+__global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_result) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < width * height) {
+    if (i < size) {
+        // #1 Compact
+        // Build predicate vector
         const int garbage_val = -27;
         if (buffer[i] != garbage_val)
             predicate[i] = 1;
+
+        // Compute the exclusive sum of the predicate
+        exclusive_scan_kernel(predicate, scan_result, size);
+        __syncthreads();
+
+        // Scatter to the corresponding addresses
+        if (buffer[i] != garbage_val)
+            buffer[scan_result[i]] = buffer[i];
+
+        // #2 Apply map to fix pixels
+        if (i % 4 == 0)
+            buffer[i] += 1;
+        else if (i % 4 == 1)
+            buffer[i] -= 5;
+        else if (i % 4 == 2)
+            buffer[i] += 3;
+        else if (i % 4 == 3)
+            buffer[i] -= 8;
+
+        // #3 Histogram equalization
+        // Histogram
+        __shared__ int histo[256];
+        if (threadIdx.x < 256) {
+            histo[threadIdx.x] = 0;
+        }
+        __syncthreads();
+        atomicAdd(&histo[buffer[i]], 1);
+        __syncthreads();
+        // Compute the inclusive sum scan of the histogram
+        inclusive_scan_kernel(histo, histo, 256);
+        __syncthreads();
+        // Normalize the histogram
+        histo[threadIdx.x] = (histo[threadIdx.x] * 255) / size;
+        __syncthreads();
+        // Apply the histogram to the image
+        buffer[i] = histo[buffer[i]];
     }
 }
 
@@ -61,9 +117,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         int *predicate;
         cudaMalloc(&predicate, size * sizeof(int));
         cudaMemset(predicate, 0, size * sizeof(int));
+        int *scan_result;
+        cudaMalloc(&scan_result, size * sizeof(int));
         int blockSize = 256;
         int numBlocks = (size + blockSize - 1) / blockSize;
-        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width, images[i].height, predicate);
+        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result);
+        cudaDeviceSynchronize();
         cudaMemcpy(images[i].buffer, buffer, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
         cudaFree(buffer);
         cudaFree(predicate);
