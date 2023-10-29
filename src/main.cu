@@ -76,10 +76,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         dim3 blockDim(32, 32);
         dim3 gridDim((width + blockDim.x - 1) / blockDim.x, (height + blockDim.y - 1) / blockDim.y);
         fix_image_gpu<<<gridDim, blockDim>>>(buffer, images[i].width, images[i].height, predicate);
-        cudaDeviceSynchronize();
         cudaMemcpy2D(images[i].buffer, width * sizeof(int), buffer, pitch, width * sizeof(int), height, cudaMemcpyDeviceToHost);
         cudaFree(buffer);
         cudaFree(predicate);
+        cudaDeviceSynchronize();
     }
 
 
