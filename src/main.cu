@@ -9,6 +9,22 @@
 #include <filesystem>
 #include <numeric>
 
+__global__ void fix_image_gpu(int* buffer, int width, int height, int* predicate)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < width && y < height) {
+        int i = y * width + x;
+        const int garbage_val = -27;
+        if (buffer[i] != garbage_val)
+            predicate[i] = 1;
+//        printf("buffer[%d][%d] = %d\n", x, y, buffer[i]);
+        buffer[i] = 12;
+    }
+}
+
+
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
     // -- Pipeline initialization
@@ -46,8 +62,26 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-        fix_image_cpu(images[i]);
+//        fix_image_cpu(images[i]);
+        int* buffer;
+        size_t width = static_cast<size_t>(images[i].width);
+        size_t height = static_cast<size_t>(images[i].height);
+        size_t size = width * height;
+        size_t pitch;
+        cudaMallocPitch(&buffer, &pitch, width * sizeof(int), height);
+        cudaMemcpy2D(buffer, pitch, images[i].buffer, width * sizeof(int), width * sizeof(int), height, cudaMemcpyHostToDevice);
+        int* predicate;
+        cudaMalloc(&predicate, size * sizeof(int));
+        cudaMemset(predicate, 0, size * sizeof(int));
+        dim3 blockDim(32, 32);
+        dim3 gridDim((width + blockDim.x - 1) / blockDim.x, (height + blockDim.y - 1) / blockDim.y);
+        fix_image_gpu<<<gridDim, blockDim>>>(buffer, images[i].width, images[i].height, predicate);
+        cudaDeviceSynchronize();
+        cudaMemcpy2D(images[i].buffer, width * sizeof(int), buffer, pitch, width * sizeof(int), height, cudaMemcpyDeviceToHost);
+        cudaFree(buffer);
+        cudaFree(predicate);
     }
+
 
     std::cout << "Done with compute, starting stats" << std::endl;
 
