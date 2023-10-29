@@ -26,7 +26,7 @@ __device__ void inclusive_scan_kernel(int* predicate, int* scan_result, int size
     }
 }
 
-__global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_result) {
+__global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_result, int *histo) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < size) {
         // #1 Compact
@@ -54,11 +54,6 @@ __global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_r
             buffer[i] -= 8;
 
         // #3 Histogram equalization
-        // Histogram
-        __shared__ int histo[256];
-        if (threadIdx.x < 256) {
-            histo[threadIdx.x] = 0;
-        }
         __syncthreads();
         atomicAdd(&histo[buffer[i]], 1);
         __syncthreads();
@@ -119,9 +114,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         cudaMemset(predicate, 0, size * sizeof(int));
         int *scan_result;
         cudaMalloc(&scan_result, size * sizeof(int));
+        int *histo;
+        cudaMalloc(&histo, 256 * sizeof(int));
+        cudaMemset(histo, 0, 256 * sizeof(int));
         int blockSize = 256;
         int numBlocks = (size + blockSize - 1) / blockSize;
-        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result);
+        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result, histo);
         cudaDeviceSynchronize();
         cudaMemcpy(images[i].buffer, buffer, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
         cudaFree(buffer);
