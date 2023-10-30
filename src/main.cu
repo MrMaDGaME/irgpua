@@ -1,72 +1,13 @@
 #include "image.hh"
 #include "pipeline.hh"
 #include "fix_cpu.cuh"
+#include "fix_gpu.cuh"
 #include <vector>
 #include <iostream>
 #include <algorithm>
 #include <sstream>
 #include <filesystem>
 #include <numeric>
-
-__device__ void exclusive_scan_kernel(int* predicate, int* scan_result, int size) {
-    // Un simple scan exclusif, pour une efficacité accrue, considérez un scan hiérarchique ou l'utilisation de bibliothèques existantes.
-    if (threadIdx.x > 0 && threadIdx.x < size) {
-        scan_result[threadIdx.x] = predicate[threadIdx.x - 1] + scan_result[threadIdx.x - 1];
-    } else {
-        scan_result[0] = 0;
-    }
-}
-
-__device__ void inclusive_scan_kernel(int* predicate, int* scan_result, int size) {
-    // Un simple scan inclusif, pour une efficacité accrue, considérez un scan hiérarchique ou l'utilisation de bibliothèques existantes.
-    if (threadIdx.x > 0 && threadIdx.x < size) {
-        scan_result[threadIdx.x] = predicate[threadIdx.x] + scan_result[threadIdx.x - 1];
-    } else {
-        scan_result[0] = predicate[0];
-    }
-}
-
-__global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_result, int *histo) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < size) {
-        // #1 Compact
-        // Build predicate vector
-        const int garbage_val = -27;
-        if (buffer[i] != garbage_val)
-            predicate[i] = 1;
-
-        // Compute the exclusive sum of the predicate
-        exclusive_scan_kernel(predicate, scan_result, size);
-        __syncthreads();
-
-        // Scatter to the corresponding addresses
-        if (buffer[i] != garbage_val)
-            buffer[scan_result[i]] = buffer[i];
-
-        // #2 Apply map to fix pixels
-        if (i % 4 == 0)
-            buffer[i] += 1;
-        else if (i % 4 == 1)
-            buffer[i] -= 5;
-        else if (i % 4 == 2)
-            buffer[i] += 3;
-        else if (i % 4 == 3)
-            buffer[i] -= 8;
-
-        // #3 Histogram equalization
-        __syncthreads();
-        atomicAdd(&histo[buffer[i]], 1);
-        __syncthreads();
-        // Compute the inclusive sum scan of the histogram
-        inclusive_scan_kernel(histo, histo, 256);
-        __syncthreads();
-        // Normalize the histogram
-        histo[threadIdx.x] = (histo[threadIdx.x] * 255) / size;
-        __syncthreads();
-        // Apply the histogram to the image
-        buffer[i] = histo[buffer[i]];
-    }
-}
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // -- Pipeline initialization
@@ -86,7 +27,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
     // -- Main loop containing image retring from pipeline and fixing
 
-    const int nb_images = pipeline.images.size();
+//    const int nb_images = pipeline.images.size();
+    const int nb_images = 1;
     std::vector <Image> images(nb_images);
 
     // - One CPU thread is launched for each image
@@ -102,11 +44,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-//        fix_image_cpu(images[i]);
+        fix_image_cpu(images[i]);
         int *buffer;
         size_t width = static_cast<size_t>(images[i].width);
         size_t height = static_cast<size_t>(images[i].height);
-        size_t size = width * height;
+        size_t size = static_cast<size_t>(images[i].size());
+        std::cout << "size_gpu : " << size << std::endl;
         cudaMalloc(&buffer, width * sizeof(int) * height);
         cudaMemcpy(buffer, images[i].buffer, width * sizeof(int) * height, cudaMemcpyHostToDevice);
         int *predicate;
@@ -119,7 +62,31 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         cudaMemset(histo, 0, 256 * sizeof(int));
         int blockSize = 256;
         int numBlocks = (size + blockSize - 1) / blockSize;
-        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result, histo);
+//        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result, histo);
+        predicateKernel<<<numBlocks, blockSize>>>(buffer, predicate, size);
+        cudaMemcpy(images[i].buffer, predicate, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
+//        for (size_t j = 0; j < size; j++) {
+//            std::cout << images[i].buffer[j] << " ";
+//        }
+//        std::cout << std::endl;
+        exclusiveSumKernel<<<numBlocks, blockSize>>>(predicate, scan_result, size);
+        cudaMemcpy(predicate, scan_result, size * sizeof(int), cudaMemcpyDeviceToDevice);
+        cudaMemset(scan_result, 0, size * sizeof(int));
+        scatterMapHistoKernel<<<numBlocks, blockSize>>>(buffer, predicate, histo, size);
+        inclusiveSumKernel<<<numBlocks, (256 + blockSize - 1) / blockSize>>>(histo, scan_result, 256);
+        cudaMemcpy(histo, scan_result, 256 * sizeof(int), cudaMemcpyDeviceToDevice);
+        int *histo_cpu = new int[256];
+        cudaMemcpy(histo_cpu, histo, 256 * sizeof(int), cudaMemcpyDeviceToHost);
+        int cdf_min = histo_cpu[0];
+        for (int k = 0; k < 256; k++) {
+            if (histo_cpu[k] != 0) {
+                cdf_min = histo_cpu[k];
+                break;
+            }
+        }
+        std::cout << "cdf_min_gpu : " << cdf_min << std::endl;
+        std::cout << std::endl;
+        applyHistoKernel<<<numBlocks, blockSize>>>(buffer, histo, size, cdf_min);
         cudaDeviceSynchronize();
         cudaMemcpy(images[i].buffer, buffer, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
         cudaFree(buffer);

@@ -17,14 +17,18 @@ void fix_image_cpu(Image& to_fix)
     std::vector<int> predicate(to_fix.size(), 0);
 
     constexpr int garbage_val = -27;
-    for (int i = 0; i < to_fix.size(); ++i)
+    for (int i = 0; i < to_fix.size(); ++i) {
         if (to_fix.buffer[i] != garbage_val)
             predicate[i] = 1;
+//        std::cout << predicate[i] << " ";
+    }
+    std::cout << "size_cpu : " << to_fix.size() << std::endl;
 
     // Compute the exclusive sum of the predicate
 
     std::exclusive_scan(predicate.begin(), predicate.end(), predicate.begin(), 0);
 
+    std::cout << "predicate : " << predicate.size() << std::endl;
     // Scatter to the corresponding addresses
 
     for (std::size_t i = 0; i < predicate.size(); ++i)
@@ -66,6 +70,8 @@ void fix_image_cpu(Image& to_fix)
     const int cdf_min = *first_none_zero;
 
     // Apply the map transformation of the histogram equalization
+
+    std::cout << "cdf_min = " << cdf_min << std::endl;
 
     std::transform(to_fix.buffer, to_fix.buffer + image_size, to_fix.buffer,
         [image_size, cdf_min, &histo](int pixel)
