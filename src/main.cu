@@ -27,9 +27,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
     // -- Main loop containing image retring from pipeline and fixing
 
-    const int first_image_id = 0;
-    const int nb_images = pipeline.images.size();
-//    const int nb_images = 1 + first_image_id;
+    const int first_image_id = 6;
+//    const int nb_images = pipeline.images.size();
+    const int nb_images = 1 + first_image_id;
     std::vector <Image> images(nb_images);
 
     // - One CPU thread is launched for each image

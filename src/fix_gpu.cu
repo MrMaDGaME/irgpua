@@ -113,7 +113,7 @@ void fix_image_gpu(Image& to_fix){
     int *histo_cpu = new int[256];
     cudaMemcpy(histo_cpu, scan_result, 256 * sizeof(int), cudaMemcpyDeviceToHost);
     // Compute cdf_min
-    int cdf_min = histo_cpu[0];
+    int cdf_min = 0;
     for (int k = 0; k < 256; k++) {
         if (histo_cpu[k] != 0) {
             cdf_min = histo_cpu[k];
@@ -124,7 +124,6 @@ void fix_image_gpu(Image& to_fix){
     applyHistoKernel<<<numBlocks, blockSize>>>(buffer, scan_result, image_size, cdf_min);
     // Copie de buffer dans images[i].buffer
     cudaMemcpy(to_fix.buffer, buffer, size * sizeof(int), cudaMemcpyDeviceToHost);
-    save_array(to_fix.buffer, size, "../fix_gpu.txt");
     // Free
     cudaFree(buffer);
     cudaFree(predicate);
