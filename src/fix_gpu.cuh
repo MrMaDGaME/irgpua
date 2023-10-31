@@ -18,8 +18,10 @@ __global__ void exclusiveSumKernel(const int *input, int *output, int length);
 
 __global__ void predicateKernel(const int *input, int *output, int length);
 
-__global__ void scatterMapHistoKernel(int *buffer, int *scan_result, int *histo, int length);
+__global__ void scatterKernel(int *buffer, int *predicate, int length);
+
+__global__ void MapHistoKernel(int *buffer, int *histo, int image_size);
 
 __global__ void applyHistoKernel(int *buffer, int *histo, int length, int cdf_min);
 
-__global__ void fix_image_gpu(int *buffer, int size, int *predicate, int *scan_result, int *histo);
+void fix_image_gpu(Image& to_fix);

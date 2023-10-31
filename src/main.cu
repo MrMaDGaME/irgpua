@@ -27,8 +27,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
     // -- Main loop containing image retring from pipeline and fixing
 
-//    const int nb_images = pipeline.images.size();
-    const int nb_images = 1;
+    const int nb_images = pipeline.images.size();
+//    const int nb_images = 1;
     std::vector <Image> images(nb_images);
 
     // - One CPU thread is launched for each image
@@ -44,53 +44,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-        fix_image_cpu(images[i]);
-        int *buffer;
-        size_t width = static_cast<size_t>(images[i].width);
-        size_t height = static_cast<size_t>(images[i].height);
-        size_t size = static_cast<size_t>(images[i].size());
-        std::cout << "size_gpu : " << size << std::endl;
-        cudaMalloc(&buffer, width * sizeof(int) * height);
-        cudaMemcpy(buffer, images[i].buffer, width * sizeof(int) * height, cudaMemcpyHostToDevice);
-        int *predicate;
-        cudaMalloc(&predicate, size * sizeof(int));
-        cudaMemset(predicate, 0, size * sizeof(int));
-        int *scan_result;
-        cudaMalloc(&scan_result, size * sizeof(int));
-        int *histo;
-        cudaMalloc(&histo, 256 * sizeof(int));
-        cudaMemset(histo, 0, 256 * sizeof(int));
-        int blockSize = 256;
-        int numBlocks = (size + blockSize - 1) / blockSize;
-//        fix_image_gpu<<<numBlocks, blockSize>>>(buffer, images[i].width * images[i].height, predicate, scan_result, histo);
-        predicateKernel<<<numBlocks, blockSize>>>(buffer, predicate, size);
-        cudaMemcpy(images[i].buffer, predicate, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
-//        for (size_t j = 0; j < size; j++) {
-//            std::cout << images[i].buffer[j] << " ";
-//        }
-//        std::cout << std::endl;
-        exclusiveSumKernel<<<numBlocks, blockSize>>>(predicate, scan_result, size);
-        cudaMemcpy(predicate, scan_result, size * sizeof(int), cudaMemcpyDeviceToDevice);
-        cudaMemset(scan_result, 0, size * sizeof(int));
-        scatterMapHistoKernel<<<numBlocks, blockSize>>>(buffer, predicate, histo, size);
-        inclusiveSumKernel<<<numBlocks, (256 + blockSize - 1) / blockSize>>>(histo, scan_result, 256);
-        cudaMemcpy(histo, scan_result, 256 * sizeof(int), cudaMemcpyDeviceToDevice);
-        int *histo_cpu = new int[256];
-        cudaMemcpy(histo_cpu, histo, 256 * sizeof(int), cudaMemcpyDeviceToHost);
-        int cdf_min = histo_cpu[0];
-        for (int k = 0; k < 256; k++) {
-            if (histo_cpu[k] != 0) {
-                cdf_min = histo_cpu[k];
-                break;
-            }
-        }
-        std::cout << "cdf_min_gpu : " << cdf_min << std::endl;
-        std::cout << std::endl;
-        applyHistoKernel<<<numBlocks, blockSize>>>(buffer, histo, size, cdf_min);
-        cudaDeviceSynchronize();
-        cudaMemcpy(images[i].buffer, buffer, width * sizeof(int) * height, cudaMemcpyDeviceToHost);
-        cudaFree(buffer);
-        cudaFree(predicate);
+//        fix_image_cpu(images[i]);
+        fix_image_gpu(images[i]);
     }
     std::cout << "Done with compute, starting stats" << std::endl;
 

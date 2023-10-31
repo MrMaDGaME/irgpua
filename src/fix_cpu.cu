@@ -6,6 +6,15 @@
 #include <algorithm>
 #include <cmath>
 
+void save_array(int *array, int size, std::string name) {
+    std::ofstream file(name);
+    for (int i = 0; i < size; i++) {
+        file << array[i] << " ";
+    }
+    file << std::endl;
+    file.close();
+}
+
 void fix_image_cpu(Image& to_fix)
 {
     const int image_size = to_fix.width * to_fix.height;
@@ -20,24 +29,18 @@ void fix_image_cpu(Image& to_fix)
     for (int i = 0; i < to_fix.size(); ++i) {
         if (to_fix.buffer[i] != garbage_val)
             predicate[i] = 1;
-//        std::cout << predicate[i] << " ";
     }
-    std::cout << "size_cpu : " << to_fix.size() << std::endl;
-
     // Compute the exclusive sum of the predicate
 
     std::exclusive_scan(predicate.begin(), predicate.end(), predicate.begin(), 0);
 
-    std::cout << "predicate : " << predicate.size() << std::endl;
     // Scatter to the corresponding addresses
 
     for (std::size_t i = 0; i < predicate.size(); ++i)
         if (to_fix.buffer[i] != garbage_val)
             to_fix.buffer[predicate[i]] = to_fix.buffer[i];
 
-
     // #2 Apply map to fix pixels
-
     for (int i = 0; i < image_size; ++i)
     {
         if (i % 4 == 0)
@@ -60,11 +63,10 @@ void fix_image_cpu(Image& to_fix)
         ++histo[to_fix.buffer[i]];
 
     // Compute the inclusive sum scan of the histogram
-
     std::inclusive_scan(histo.begin(), histo.end(), histo.begin());
+    save_array(histo.data(), 256, "../histo_cpu.txt");
 
     // Find the first non-zero value in the cumulative histogram
-
     auto first_none_zero = std::find_if(histo.begin(), histo.end(), [](auto v) { return v != 0; });
 
     const int cdf_min = *first_none_zero;
