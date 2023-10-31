@@ -1,5 +1,13 @@
 #include "fix_gpu.cuh"
-#include "fix_cpu.cuh"
+
+void save_array(int *array, int size, std::string name) {
+    std::ofstream file(name);
+    for (int i = 0; i < size; i++) {
+        file << array[i] << " ";
+    }
+    file << std::endl;
+    file.close();
+}
 
 __global__ void inclusiveSumKernel(const int *input, int *output, int length) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -63,10 +71,10 @@ __global__ void MapHistoKernel(int *buffer, int *histo, int image_size) {
     }
 }
 
-__global__ void applyHistoKernel(int *buffer, int *histo, int length, int cdf_min) {
+__global__ void applyHistoKernel(int *buffer, int *histo, int image_size, int cdf_min) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < length) {
-        buffer[i] = lroundf(((histo[buffer[i]] - cdf_min) / static_cast<float>(length - cdf_min)) * 255.0f);
+    if (i < image_size) {
+        buffer[i] = roundf(((histo[buffer[i]] - cdf_min) / static_cast<float>(image_size - cdf_min)) * 255.0f);
     }
 }
 
@@ -97,7 +105,8 @@ void fix_image_gpu(Image& to_fix){
     // Scatter to the corresponding addresses
     scatterKernel<<<numBlocks, blockSize>>>(buffer, predicate, size);
     // Apply map, Build histo
-    MapHistoKernel<<<(image_size + blockSize - 1) / blockSize , blockSize>>>(buffer, histo, image_size);
+    numBlocks = (image_size + blockSize - 1) / blockSize;
+    MapHistoKernel<<<numBlocks , blockSize>>>(buffer, histo, image_size);
     // Compute the inclusive sum of the histo
     inclusiveSumKernel<<<(256 + blockSize - 1) / blockSize, blockSize>>>(histo, scan_result, 256);
     // Copie de scan_result dans histo_cpu
@@ -112,9 +121,10 @@ void fix_image_gpu(Image& to_fix){
         }
     }
     // Apply the map transformation of the histogram equalization
-    applyHistoKernel<<<numBlocks, blockSize>>>(buffer, scan_result, size, cdf_min);
+    applyHistoKernel<<<numBlocks, blockSize>>>(buffer, scan_result, image_size, cdf_min);
     // Copie de buffer dans images[i].buffer
     cudaMemcpy(to_fix.buffer, buffer, size * sizeof(int), cudaMemcpyDeviceToHost);
+    save_array(to_fix.buffer, size, "../fix_gpu.txt");
     // Free
     cudaFree(buffer);
     cudaFree(predicate);

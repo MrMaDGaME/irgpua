@@ -27,15 +27,16 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
     // -- Main loop containing image retring from pipeline and fixing
 
+    const int first_image_id = 0;
     const int nb_images = pipeline.images.size();
-//    const int nb_images = 1;
+//    const int nb_images = 1 + first_image_id;
     std::vector <Image> images(nb_images);
 
     // - One CPU thread is launched for each image
 
     std::cout << "Done, starting compute" << std::endl;
 #pragma omp parallel for
-    for (int i = 0; i < nb_images; ++i) {
+    for (int i = first_image_id; i < nb_images; ++i) {
         // TODO : make it GPU compatible (aka faster)
         // You will need to copy images one by one on the GPU
         // You can store the images the way you want on the GPU
@@ -44,8 +45,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-//        fix_image_cpu(images[i]);
-        fix_image_gpu(images[i]);
+        fix_image_cpu(images[i]);
+//        fix_image_gpu(images[i]);
+//        save_array(images[i].buffer, images[i].width * images[i].height, "../fix_gpu.txt");
     }
     std::cout << "Done with compute, starting stats" << std::endl;
 
@@ -57,7 +59,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // You can use multiple CPU threads for your GPU version using openmp or not
     // Up to you :)
 #pragma omp parallel for
-    for (int i = 0; i < nb_images; ++i) {
+    for (int i = first_image_id; i < nb_images; ++i) {
         auto &image = images[i];
         const int image_size = image.width * image.height;
         image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
@@ -83,7 +85,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // TODO : Test here that you have the same results
     // You can compare visually and should compare image vectors values and "total" values
     // If you did the sorting, check that the ids are in the same order
-    for (int i = 0; i < nb_images; ++i) {
+    for (int i = first_image_id; i < nb_images; ++i) {
         std::cout << "Image #" << images[i].to_sort.id << " total : " << images[i].to_sort.total << std::endl;
         std::ostringstream oss;
         oss << "Image#" << images[i].to_sort.id << ".pgm";
