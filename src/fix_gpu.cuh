@@ -27,3 +27,7 @@ __global__ void MapHistoKernel(int *buffer, int *histo, int image_size);
 __global__ void applyHistoKernel(int *buffer, int *histo, int image_size, int cdf_min);
 
 void fix_image_gpu(Image& to_fix);
+
+uint64_t reduce_gpu(int *buffer, int size);
+
+__global__ void reduceKernel(int *buffer, int *sum, int size);

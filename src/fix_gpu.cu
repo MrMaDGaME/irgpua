@@ -124,10 +124,32 @@ void fix_image_gpu(Image& to_fix){
     applyHistoKernel<<<numBlocks, blockSize>>>(buffer, scan_result, image_size, cdf_min);
     // Copie de buffer dans images[i].buffer
     cudaMemcpy(to_fix.buffer, buffer, size * sizeof(int), cudaMemcpyDeviceToHost);
+    // Compute total
+    to_fix.to_sort.total = reduce_gpu(buffer, image_size);
     // Free
     cudaFree(buffer);
     cudaFree(predicate);
     cudaFree(scan_result);
     cudaFree(histo);
     cudaDeviceSynchronize();
+}
+
+__global__ void reduceKernel(int *buffer, int *sum, int size) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < size) {
+        atomicAdd(sum, buffer[tid]);
+    }
+}
+
+uint64_t reduce_gpu(int *buffer, int size) {
+    int *sum;
+    cudaMalloc(&sum, sizeof(int));
+    cudaMemset(sum, 0, sizeof(int));
+    int blockSize = 256;
+    int numBlocks = (size + blockSize - 1) / blockSize;
+    reduceKernel<<<numBlocks, blockSize>>>(buffer, sum, size);
+    int sum_cpu;
+    cudaMemcpy(&sum_cpu, sum, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(sum);
+    return sum_cpu;
 }

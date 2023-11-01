@@ -27,10 +27,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
     // -- Main loop containing image retring from pipeline and fixing
 
-    const int first_image_id = 6;
+    const int first_image_id = 0;
 //    const int nb_images = pipeline.images.size();
     const int nb_images = 1 + first_image_id;
     std::vector <Image> images(nb_images);
+    bool is_gpu = true;
 
     // - One CPU thread is launched for each image
 
@@ -45,9 +46,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-        fix_image_cpu(images[i]);
-//        fix_image_gpu(images[i]);
-//        save_array(images[i].buffer, images[i].width * images[i].height, "../fix_gpu.txt");
+        if (!is_gpu) {
+            fix_image_cpu(images[i]);
+//            save_array(images[i].buffer, images[i].width * images[i].height, "../fix_cpu.txt");
+        } else {
+            fix_image_gpu(images[i]);
+//            save_array(images[i].buffer, images[i].width * images[i].height, "../fix_gpu.txt");
+        }
     }
     std::cout << "Done with compute, starting stats" << std::endl;
 
@@ -58,11 +63,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // TODO : make it GPU compatible (aka faster)
     // You can use multiple CPU threads for your GPU version using openmp or not
     // Up to you :)
+    if (!is_gpu) {
 #pragma omp parallel for
-    for (int i = first_image_id; i < nb_images; ++i) {
-        auto &image = images[i];
-        const int image_size = image.width * image.height;
-        image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
+        for (int i = first_image_id; i < nb_images; ++i) {
+            auto &image = images[i];
+            const int image_size = image.width * image.height;
+            image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
+        }
     }
 
     // - All totals are known, sort images accordingly (OPTIONAL)
