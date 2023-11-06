@@ -2,6 +2,7 @@
 #include "pipeline.hh"
 #include "fix_cpu.cuh"
 #include "fix_gpu.cuh"
+#include "fix_indus.cuh"
 #include <vector>
 #include <iostream>
 #include <algorithm>
@@ -28,10 +29,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // -- Main loop containing image retring from pipeline and fixing
 
     const int first_image_id = 0;
-//    const int nb_images = pipeline.images.size();
-    const int nb_images = 1 + first_image_id;
+    const int nb_images = pipeline.images.size();
+//    const int nb_images = 1 + first_image_id;
     std::vector <Image> images(nb_images);
-    bool is_gpu = true;
+    // 0 for CPU, 1 for GPU, 2 for Industrial
+    int is_gpu = 2;
 
     // - One CPU thread is launched for each image
 
@@ -46,12 +48,15 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
         // You must get the image from the pipeline as they arrive and launch computations right away
         // There are still ways to speeds this process of course (wait for last class)
         images[i] = pipeline.get_image(i);
-        if (!is_gpu) {
+        if (is_gpu == 0) {
             fix_image_cpu(images[i]);
 //            save_array(images[i].buffer, images[i].width * images[i].height, "../fix_cpu.txt");
-        } else {
+        } else if (is_gpu == 1){
             fix_image_gpu(images[i]);
 //            save_array(images[i].buffer, images[i].width * images[i].height, "../fix_gpu.txt");
+        }
+        else if (is_gpu == 2) {
+            fix_image_indus(images[i]);
         }
     }
     std::cout << "Done with compute, starting stats" << std::endl;
@@ -63,7 +68,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // TODO : make it GPU compatible (aka faster)
     // You can use multiple CPU threads for your GPU version using openmp or not
     // Up to you :)
-    if (!is_gpu) {
+    if (is_gpu == 0) {
 #pragma omp parallel for
         for (int i = first_image_id; i < nb_images; ++i) {
             auto &image = images[i];
