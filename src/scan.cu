@@ -193,19 +193,21 @@ void test_scan(const int size, const int block_size, const int rd) {
     std::cout << "INPUT SIZE: " << FYEL(size) << std::endl;
     std::cout << std::endl;
 
-    int input[size];
-    if (rd == 1) {
-        for (int i = 0; i < size; i++) {
-            input[i] = 1;
-        }
-    } else if (rd == 2) {
-        for (int i = 0; i < size; i++) {
-            input[i] = i + 1;
-        }
-    } else {
-        srand(time(NULL));
-        for (int i = 0; i < size; i++) {
-            input[i] = rand() % 16;
+    int input[size] = {0};
+    if (rd != 0) {
+        if (rd == 1) {
+            for (int i = 0; i < size; i++) {
+                input[i] = 1;
+            }
+        } else if (rd == 2) {
+            for (int i = 0; i < size; i++) {
+                input[i] = i + 1;
+            }
+        } else {
+            srand(time(NULL));
+            for (int i = 0; i < size; i++) {
+                input[i] = rand() % 16;
+            }
         }
     }
 
@@ -283,7 +285,7 @@ void test_scan(const int size, const int block_size, const int rd) {
 int test_scan_main(int argc, char** argv) {
     int s = 8;
     int bs = 8;
-    int rd = 0;
+    int rd = 3;
     if (argc >= 2) {
         s = std::stoi(argv[1]);
     }
@@ -294,7 +296,7 @@ int test_scan_main(int argc, char** argv) {
         rd = std::stoi(argv[3]);
     }
     
-    std::cout << FBLU("Usage: ./main [ARRAY SIZE] [BLOCK SIZE] [FILL TYPE: 0 -> random | 1 -> full one | 2 -> (index + 1)]") << std::endl << std::endl;
+    std::cout << FBLU("Usage: ./main [ARRAY SIZE] [BLOCK SIZE] [FILL TYPE: 0 -> full zero | 1 -> full one | 2 -> (index + 1) | 3 -> random]") << std::endl << std::endl;
     test_scan(s, bs, rd);
 
     return 0;
