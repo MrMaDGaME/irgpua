@@ -16,8 +16,6 @@ void save_array(int *array, int size, std::string name);
 
 __global__ void inclusiveSumKernel(const int *input, int *output, int length);
 
-__global__ void exclusiveSumKernel(const int *input, int *output, int length);
-
 __global__ void predicateKernel(const int *input, int *output, int length);
 
 __global__ void scatterKernel(int *buffer, int *predicate, int length);

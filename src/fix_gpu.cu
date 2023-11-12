@@ -1,4 +1,5 @@
 #include "fix_gpu.cuh"
+#include "scan.cuh"
 
 void save_array(int *array, int size, std::string name) {
     std::ofstream file(name);
@@ -15,19 +16,6 @@ __global__ void inclusiveSumKernel(const int *input, int *output, int length) {
         int sum = 0;
         for (int i = 0; i <= tid; i++) {
             sum += input[i];
-        }
-        output[tid] = sum;
-    }
-}
-
-__global__ void exclusiveSumKernel(const int *input, int *output, int length) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < length) {
-        int sum = 0;
-        if (tid > 0) {
-            for (int i = 0; i < tid; i++) {
-                sum += input[i];
-            }
         }
         output[tid] = sum;
     }
@@ -94,12 +82,12 @@ void fix_image_gpu(Image& to_fix){
     cudaMalloc(&histo, 256 * sizeof(int));
     cudaMemset(histo, 0, 256 * sizeof(int));
     // Kernel calls
-    int blockSize = 256;
+    int blockSize = 1024;
     int numBlocks = (size + blockSize - 1) / blockSize;
     // Build predicate vector
     predicateKernel<<<numBlocks, blockSize>>>(buffer, predicate, size);
     // Compute the exclusive sum of the predicate
-    exclusiveSumKernel<<<numBlocks, blockSize>>>(predicate, scan_result, size);
+    exclusive_scan(predicate, scan_result, size, blockSize);
     // Copie de scan_result dans predicate
     cudaMemcpy(predicate, scan_result, size * sizeof(int), cudaMemcpyDeviceToDevice);
     // Scatter to the corresponding addresses

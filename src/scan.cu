@@ -8,66 +8,19 @@
 #include "cuda_utils.cuh"
 #include "colors.hh"
 
-__global__ void adjust_scan_results(int* output, int size, int* block_sums) {
-    int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (globalIdx < size && blockIdx.x > 0) {
-        output[globalIdx] += block_sums[blockIdx.x - 1];
-    }
-}
-
-__global__ void compute_block_sums(const int* scan_result, int* block_sums, int size, int blockSize) {
-    int blockId = blockIdx.x;
-    int tid = threadIdx.x;
-    int index = blockId * blockSize + tid;
-
-    int prev_block_sum_id = blockId * blockSize + (blockSize - 1);
-
-    if (tid == 0 && index < size) {  // First thread of each block handles this
-        block_sums[blockId] = scan_result[prev_block_sum_id];  // Last element of the block
-    }
-}
-
 __global__ void compute_block_sums(const int* input, const int* scan_result, int* block_sums, int size, int blockSize) {
     int blockId = blockIdx.x;
     int tid = threadIdx.x;
     int index = blockId * blockSize + tid;
 
-    int prev_block_sum_id = blockId * blockSize + (blockSize - 1);
+    int prev_block_sum_id = ((blockId + 1) * blockSize) - 1;
 
     if (tid == 0 && index < size) {  // First thread of each block handles this
         if (blockId == 0) {
-            block_sums[blockId] = scan_result[prev_block_sum_id] + input[(blockId + 1) * blockSize * 2];  // Last element of the block
+            block_sums[blockId] = scan_result[blockSize - 1] + input[blockSize - 1];  // Last element of the block
         } else {
-            block_sums[blockId] = scan_result[prev_block_sum_id] + input[(blockId + 1) * blockSize];
+            block_sums[blockId] = scan_result[prev_block_sum_id] + input[prev_block_sum_id];
         }
-    }
-}
-
-__global__ void exclusive_scan_block_sums(int* block_sums, int num_blocks) {
-    extern __shared__ int temp[];  // Shared memory for block sums
-    int tid = threadIdx.x;
-
-    // Load block sums into shared memory
-    if (tid < num_blocks) {
-        temp[tid] = (tid > 0) ? block_sums[tid - 1] : 0;
-    } else {
-        temp[tid] = 0;
-    }
-    __syncthreads();
-
-    // Perform scan in shared memory
-    for (int stride = 1; stride < blockDim.x; stride *= 2) {
-        int index = (tid + 1) * stride * 2 - 1;
-        if (index < blockDim.x) {
-            temp[index] += temp[index - stride];
-        }
-        __syncthreads();
-    }
-
-    // Write results back to global memory
-    if (tid < num_blocks) {
-        block_sums[tid] = temp[tid];
     }
 }
 
@@ -76,17 +29,6 @@ __global__ void adjust_scan_results(int* output, const int* block_sums, int size
 
     if (globalIdx < size && blockIdx.x > 0) {
         output[globalIdx] += block_sums[blockIdx.x - 1];
-    }
-}
-
-__global__ void adjust_scan_results(int* input, int* output, const int* block_sums, int size, int blockSize) {
-    int blockId = blockIdx.x;
-    int tid = threadIdx.x;
-    int index = blockId * blockSize + tid;
-
-    if (index < size && blockId > 0) {
-        // int last_element_in_previous_block_id = (blockId * blockSize);
-        output[index] += block_sums[blockId - 1];  // Adjust with the sum of previous blocks
     }
 }
 
@@ -128,6 +70,7 @@ __global__ void exclusive_scan_kernel(const int* input, int* output, int size) {
     }
 }
 
+// Used for debug
 void cpu_exclusive_scan(int* input, int* output, int size) {
     std::vector<int> vec(input, input + size);
     for (int i = 0; i < size; i++) {
@@ -138,7 +81,6 @@ void cpu_exclusive_scan(int* input, int* output, int size) {
         output[i] = vec[i];
     }
 }
-
 
 void exclusive_scan(const int* input, int* output, int size, int bsize) {
     int* d_input;
@@ -155,6 +97,7 @@ void exclusive_scan(const int* input, int* output, int size, int bsize) {
 
     // Allocate memory for block sums
     cudaMalloc(&d_block_sums, gridSize * sizeof(int));
+    //cudaMemset(d_block_sums, 1, gridSize * sizeof(int));
 
     // Copy input data to device
     cudaMemcpy(d_input, input, size * sizeof(int), cudaMemcpyHostToDevice);
@@ -170,10 +113,9 @@ void exclusive_scan(const int* input, int* output, int size, int bsize) {
     int* block_sums = new int[gridSize];
     cudaMemcpy(block_sums, d_block_sums, gridSize * sizeof(int), cudaMemcpyDeviceToHost);
 
-    // Exclusive scan on block sums using GPU kernel
-    int blockSumScanBlockSize = 1024;  // Adjust as needed
-    int blockSumScanGridSize = (gridSize + blockSumScanBlockSize - 1) / blockSumScanBlockSize;
-    exclusive_scan_block_sums<<<blockSumScanGridSize, blockSumScanBlockSize, blockSumScanBlockSize * sizeof(int)>>>(d_block_sums, gridSize);
+    for (int i = 1; i < gridSize; i++) {
+        block_sums[i] += block_sums[i - 1];
+    }
 
     // Copy adjusted block sums back to device
     cudaMemcpy(d_block_sums, block_sums, gridSize * sizeof(int), cudaMemcpyHostToDevice);
@@ -194,6 +136,58 @@ void exclusive_scan(const int* input, int* output, int size, int bsize) {
     delete[] block_sums;
 }
 
+
+// WORK IN PROGRESS
+__global__ void inclusive_scan_kernel(const int* input, int* output, int size) {
+    extern __shared__ int temp[];  // Shared memory
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int localIdx = threadIdx.x;  // Local index for shared memory
+
+    // Load input into shared memory
+    if (tid < size) {
+        temp[localIdx] = input[tid];
+    } else {
+        temp[localIdx] = 0;
+    }
+    __syncthreads();
+
+    // Perform scan in shared memory
+    for (int stride = 1; stride <= blockDim.x; stride *= 2) {
+        int index = (localIdx + 1) * stride * 2 - 1;
+        if (index < blockDim.x) {
+            int val = (index - stride >= 0) ? temp[index - stride] : 0;
+            temp[index] += val;
+        }
+        __syncthreads();
+    }
+
+    // Write results to output array
+    if (tid < size) {
+        output[tid] = temp[localIdx];
+    }
+}
+
+// WORK IN PROGRESS
+void inclusive_scan(int *input, int *output, int size, int bsize) {
+    int *d_input, *d_output;
+
+    cudaMalloc(&d_input, size * sizeof(int));
+    cudaMalloc(&d_output, size * sizeof(int));
+
+    cudaMemcpy(d_input, input, size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemset(d_output, 0, size * sizeof(int));
+
+    // Define block and grid sizes
+    int blockSize = bsize; // Define as per your GPU's architecture
+    int gridSize = (size + blockSize - 1) / blockSize;
+    inclusive_scan_kernel<<<gridSize, blockSize>>>(d_input, d_output, size * sizeof(int));
+
+    cudaMemcpy(output, d_output, size * sizeof(int), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+}
+
 void test_scan(const int size, const int block_size, const int rd) {
     std::cout << "BLOCK SIZE: " << FYEL(block_size) << std::endl;
     std::cout << "INPUT SIZE: " << FYEL(size) << std::endl;
@@ -209,8 +203,13 @@ void test_scan(const int size, const int block_size, const int rd) {
             for (int i = 0; i < size; i++) {
                 input[i] = i + 1;
             }
-        } else {
+        } else if (rd == 3) {
             srand(time(NULL));
+            for (int i = 0; i < size; i++) {
+                input[i] = rand() % 16;
+            }
+        } else {
+            srand(42);
             for (int i = 0; i < size; i++) {
                 input[i] = rand() % 16;
             }
@@ -291,7 +290,7 @@ void test_scan(const int size, const int block_size, const int rd) {
 int test_scan_main(int argc, char** argv) {
     int s = 8;
     int bs = 8;
-    int rd = 3;
+    int rd = 4;
     if (argc >= 2) {
         s = std::stoi(argv[1]);
     }
@@ -302,7 +301,7 @@ int test_scan_main(int argc, char** argv) {
         rd = std::stoi(argv[3]);
     }
     
-    std::cout << FBLU("Usage: ./main [ARRAY SIZE] [BLOCK SIZE] [FILL TYPE: 0 -> full zero | 1 -> full one | 2 -> (index + 1) | 3 -> random]") << std::endl << std::endl;
+    std::cout << FBLU("Usage: ./main [ARRAY SIZE] [BLOCK SIZE] [FILL TYPE: 0 -> full zero | 1 -> full one | 2 -> (index + 1) | 3 -> random | 4 -> fixed random]") << std::endl << std::endl;
     test_scan(s, bs, rd);
 
     return 0;
