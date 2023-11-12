@@ -1,4 +1,6 @@
 #include <iostream>
+#include <vector>
+#include <numeric>
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
@@ -127,9 +129,13 @@ __global__ void exclusive_scan_kernel(const int* input, int* output, int size) {
 }
 
 void cpu_exclusive_scan(int* input, int* output, int size) {
-    output[0] = 0; // The first element is always 0 in an exclusive scan
-    for (int i = 1; i < size; ++i) {
-        output[i] = output[i - 1] + input[i - 1];
+    std::vector<int> vec(input, input + size);
+    for (int i = 0; i < size; i++) {
+        vec[i] = input[i];
+    }
+    std::exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
+    for (int i = 0; i < size; i++) {
+        output[i] = vec[i];
     }
 }
 
