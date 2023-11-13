@@ -87,7 +87,7 @@ void fix_image_gpu(Image& to_fix){
     // Build predicate vector
     predicateKernel<<<numBlocks, blockSize>>>(buffer, predicate, size);
     // Compute the exclusive sum of the predicate
-    exclusive_scan(predicate, scan_result, size, blockSize);
+    exclusive_scan(predicate, scan_result, size, blockSize, true);
     // Copie de scan_result dans predicate
     cudaMemcpy(predicate, scan_result, size * sizeof(int), cudaMemcpyDeviceToDevice);
     // Scatter to the corresponding addresses
@@ -96,7 +96,7 @@ void fix_image_gpu(Image& to_fix){
     numBlocks = (image_size + blockSize - 1) / blockSize;
     MapHistoKernel<<<numBlocks , blockSize>>>(buffer, histo, image_size);
     // Compute the inclusive sum of the histo
-    inclusiveSumKernel<<<(256 + blockSize - 1) / blockSize, blockSize>>>(histo, scan_result, 256);
+    inclusive_scan(histo, scan_result, 256, blockSize, true);
     // Copie de scan_result dans histo_cpu
     int *histo_cpu = new int[256];
     cudaMemcpy(histo_cpu, scan_result, 256 * sizeof(int), cudaMemcpyDeviceToHost);

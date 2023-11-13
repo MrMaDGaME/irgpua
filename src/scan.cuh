@@ -1,9 +1,12 @@
 #pragma once
 
-void cpu_exclusive_scan(const int* input, int* output, int size);
-void exclusive_scan(const int* input, int* output, int size, int bsize);
+// Kernel
+__global__ void exclusive_scan_kernel(const int* input, int* output, int size);
+__global__ void inclusive_scan_kernel(const int *input, int *output, int size);
 
-void inclusive_scan(int *input, int *output, int size, int bsize);
+// Scan
+void inclusive_scan(int* input, int* output, int size, int bsize, bool allocated);
+void exclusive_scan(int* input, int* output, int size, int bsize, bool allocated);
 
-void test_scan(const int size, const int block_size, const int rd);
+// Test function
 int test_scan_main(int argc, char** argv);

@@ -3,6 +3,7 @@
 #include "fix_cpu.cuh"
 #include "fix_gpu.cuh"
 #include "fix_indus.cuh"
+#include "scan.cuh"
 #include <vector>
 #include <iostream>
 #include <algorithm>
@@ -10,11 +11,6 @@
 #include <filesystem>
 #include <numeric>
 
-#include "scan.cuh"
-
-// int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
-//     return test_scan_main(argc, argv);
-// }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     // -- Pipeline initialization
